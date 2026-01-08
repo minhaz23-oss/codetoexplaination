@@ -1,13 +1,6 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { RepoAnalysis } from "./analysis";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
 export async function generateDiagramJSON(analysis: RepoAnalysis) {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash-001"
-  });
-
   const prompt = `
     You are an expert Software Architect and Technical Writer. 
     Your goal is to explain this GitHub repository to a developer who wants to understand "What is this project?", "How is it organized?", and "How does it work?" without reading the code.
@@ -54,10 +47,38 @@ export async function generateDiagramJSON(analysis: RepoAnalysis) {
   `;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://codetodiagram.com", // Optional, strictly required by some providers via OpenRouter
+        "X-Title": "CodeToDiagram" // Optional
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-20b",
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenRouter API Error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices[0]?.message?.content || "";
+
+    // Clean up markdown code blocks if present
     const cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim();
+
     return JSON.parse(cleanText);
+
   } catch (error) {
     console.error("AI Generation Error:", error);
     return {
