@@ -19,12 +19,14 @@ export async function generateDiagramJSON(analysis: RepoAnalysis) {
     3. **Route Breakdown**: Map out the key pages and API endpoints. Infer their purpose from their name.
     4. **Technical Implementation**: Provide a detailed list of features, inferred prerequisites (Node version, API keys), and basic deployment steps.
 
-    ### Output Format (Strict JSON, no markdown)
+    ### Output Format
+    IMPORTANT: Return ONLY valid JSON. No markdown, no code blocks, no explanations. Just the JSON object.
+    
     {
       "projectInfo": {
         "name": "Project Name (Inferred)",
         "purpose": "A concise summary of what this project does.",
-        "description": "A detailed explanation of the project's features and goals.",
+        "description": "A detailed explanation of the project features and goals.",
         "type": "Web App / API / CLI / Library"
       },
       "structure": {
@@ -44,6 +46,8 @@ export async function generateDiagramJSON(analysis: RepoAnalysis) {
         "deployment": "Vercel / Docker / Netlify"
       }
     }
+    
+    Return ONLY the JSON object above with your analysis filled in. No other text.
   `;
 
   try {
@@ -56,13 +60,18 @@ export async function generateDiagramJSON(analysis: RepoAnalysis) {
         "X-Title": "CodeToDiagram" // Optional
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-20b",
+        model: "meta-llama/llama-3.1-8b-instruct",
         messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant that returns ONLY valid JSON responses. Never include markdown, code blocks, or explanations outside the JSON object."
+          },
           {
             role: "user",
             content: prompt
           }
-        ]
+        ],
+        response_format: { type: "json_object" }
       })
     });
 
@@ -74,13 +83,45 @@ export async function generateDiagramJSON(analysis: RepoAnalysis) {
     const data = await response.json();
     const text = data.choices[0]?.message?.content || "";
 
-    // Clean up markdown code blocks if present
-    const cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    // Clean up markdown code blocks and other formatting issues
+    let cleanText = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
 
-    return JSON.parse(cleanText);
+    // Try to extract JSON if there's extra text
+    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleanText = jsonMatch[0];
+    }
+
+    // Attempt to parse JSON with better error handling
+    try {
+      return JSON.parse(cleanText);
+    } catch (parseError) {
+      console.error("JSON Parse Error:", parseError);
+      console.error("Attempted to parse:", cleanText.substring(0, 500));
+      
+      // Try to fix common JSON issues
+      try {
+        // Remove trailing commas before closing braces/brackets
+        const fixedText = cleanText
+          .replace(/,(\s*[}\]])/g, '$1')
+          // Fix unescaped quotes in strings (basic attempt)
+          .replace(/([^\\])"([^"]*)":/g, '$1"$2":');
+        
+        return JSON.parse(fixedText);
+      } catch (secondError) {
+        console.error("Second parse attempt failed:", secondError);
+        throw new Error(`Failed to parse AI response: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+      }
+    }
 
   } catch (error) {
     console.error("AI Generation Error:", error);
+    if (error instanceof Error) {
+      console.error("Error details:", error.message);
+    }
     return {
       projectInfo: { name: "Error", purpose: "Failed to analyze", description: "Could not generate explanation.", type: "Unknown" },
       structure: { summary: "N/A", directories: [] },
