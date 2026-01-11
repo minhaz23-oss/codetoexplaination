@@ -60,7 +60,7 @@ export async function generateDiagramJSON(analysis: RepoAnalysis) {
         "X-Title": "CodeToDiagram" // Optional
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.1-8b-instruct",
+        model: "openai/gpt-oss-120b",
         messages: [
           {
             role: "system",
